@@ -5,7 +5,7 @@ categories: [linux,系统运维,logrotate]
 tags: [linux,logrotate]
 ---
 
-logrotate是linux自带的管理日志
+logrotate是linux自带的日志轮转服务
 主要有两个配置文件/etc/logrotate.conf、/etc/logrotate.d/下的文件
 
 ```
