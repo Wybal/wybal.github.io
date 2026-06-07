@@ -1,0 +1,87 @@
+---
+title: ssh通信解析及常见排错
+date: 2026-06-07 22:07:00 +0800
+categories: [linux,系统运维,ssh]
+tags: [linux,系统运维,ssh]
+---
+
+#### 1、ssh连接和ssh互信过程
+ssh-kengen 生成公私钥对(id_rsa,id_rsa.pub)
+ssh-copy-id user@ip将id_rsa.pub拷贝到服务端user家目录下的.ssh/authorized_keys文件下
+
+id_rsa: 私钥
+id_rsa.pub: 公钥
+known_hosts: 当前host作为客户端，ssh连接过的服务端ip/主机名和对应公钥
+authorized_keys: 当前host作为服务端，记录哪些客户端可以免密登录我
+
+#### 2、加密通信过程
+![image](https://github.com/DouDou-sudo/linux/blob/main/images/%E5%85%AC%E7%A7%81%E9%92%A5%E5%8A%A0%E5%AF%86.jpg?raw=true)
+
+1.首先不必做公钥交换了，在登录请求之前我需要将客户端的公钥发给服务器端
+
+2.现在客户端发起一个登录请求
+
+3.服务器端怎么做呢，先随机生成一串东西，然后用客户端的公钥进行加密，发给客户端
+
+4.客户端拿到这串解密后的东西后用自己的私钥（客户端私钥）解密一下，如无意外，会得到原来的字符串，然后再把这个解密后的字符串发给服务器端
+
+5.服务器端拿到这串字符串后和自己之前生成的字符串比对一下，看是不是一样，一样的话就是自己人了，把登录反馈回去
+
+#### 3、sshd_config配置文件解析
+/etc/ssh/sshd_config配置文件
+```
+#Port 22                            默认端口为22，如果需要修改取消注释，修改22端口
+#AddressFamily any                  IPV4和IPV6协议用哪个，any表示二者均有
+#ListenAddress 0.0.0.0              指明监控的地址，0.0.0.0表示本机的所有地址  【默认可修改】
+PermitRootLogin                     是否允许root登录，默认为yes，yes：允许；no：禁止；without-password:禁止使用密码认证登录，可以使用密钥认证登录；
+PasswordAuthentication yes          是否允许基于密码的认证，默认为yes
+#UseDNS yes                         是否对远程主机名进行反向解析，检查主机名和ip是否真实对应，如果想让客户端连接服务器端快一些，这个可以改为no
+X11Forwarding yes                   是否允许x11转发，可以让窗口的数据通过SSH连接来传递(请查看ssh -X 参数)：#ssh -X  user@IP
+Subsystem sftp /usr/libexec/openssh/sftp-server                    支持 SFTP ，如果注释掉，则不支持sftp连接
+#MaxAuthTries 6                     最大认证尝试次数，最多可以尝试6次输入密码。之后需要等待某段时间后才能再次输入密码
+#MaxSessions 10                     允许的最大会话数
+SyslogFacility AUTHPRIV             当有人使用ssh登录系统的时候，SSH会记录信息，信息保存在/var/log/secure里面
+#LoginGraceTime 2m                  登录的宽限时间，默认2分钟没有输入密码，则自动断开连接
+#MaxAuthTries 6		#最大认证尝试次数
+#PubkeyAuthentication yes	#是否允许公钥认证
+#PermitRootLogin no	#是否允许root用户使用ssh登录
+#PermitEmptyPasswords no	#是否允许口令为空的账号登录
+UsePAM yes		#使用PAM登录认证
+#LoginGraceTime 2m	#限制用户必须在指定时间内认证成功
+#SyslogFacility AUTH	#设置ssh服务的日志类型
+#LogLevel INFO		#记录sshd日志的级别
+#ClientAliveCountMax 3	#设置超时次数，服务器发出请求后客户端没有响应的次数达到一定值，连接自动断开
+#       AllowTcpForwarding no	#是否允许TCP转发
+```
+
+#### 4、忽略指纹验证
+当初次ssh连接其他服务器时，会提示验证指纹
+The authenticity of host '192.168.189.131 (192.168.189.131)' can't be established.
+ECDSA key fingerprint is SHA256:ZalbyAIjQK4kaEp37naBAvK8ZrdvCbKeizwNuNmrNQs.
+Are you sure you want to continue connecting (yes/no)?
+当确保安全的情况下，想忽略指纹验证，需要修改本机的/etc/ssh/ssh_config配置文件(是本机的不是被连接端的)，在Host *下添加如下参数
+```
+Host *
+        StrictHostKeyChecking no
+```
+或者使用ssh-keyscan <host_ip> >> ~/.ssh/known_hosts提前获取服务端的公钥，并将公钥写入客户端的know_hosts文件
+
+FAQ
+1、已经配置ssh互信，ssh连接还是需要密码？
+家目录的权限给太高，给755权限即可
+
+2、centos5 配置ssh免密需要显式指定公钥
+ssh-copy-id -i  /home/d5000/zhongwei/.ssh/id_dsa.pub d5000@198.51.1.83
+
+3、连接报错WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED
+连接新服务器时，客户端会记录服务端的公钥至客户端的 known_hosts。后续每次连接时，客户端都会比对服务器返回的公钥与本地 known_hosts 中记录的是否一致。如果不一致（例如服务器重装系统或遭遇中间人攻击），客户端会中断连接并发出严重警告（WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!）
+此时从 known_hosts 中删除对应的记录再重新连接即可
+
+4、ssh连接不通排查
+1) 查看防护墙是否关闭
+2) 服务是否启动
+3) 查看/etc/hosts.deny下的内容，是否禁掉ssh
+4) 查看配置文件
+
+
+
